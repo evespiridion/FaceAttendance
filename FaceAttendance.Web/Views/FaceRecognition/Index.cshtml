@@ -7,22 +7,27 @@
     <script src="~/js/face-api.min.js"></script>
     <script src="~/js/tsf.js"></script>
     <style>
-        #canvas {
-            position: absolute;
-            left: 0;
-            top: 0;
-        }
-
         video {
             width: 640px;
             height: 480px;
+            position: relative;
+            z-index: 1;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
         }
     </style>
 </head>
 <body>
-    <video id="video" autoplay></video>
-    <canvas id="canvas"></canvas>
-
+    <div style="position: relative; width: 640px; height: 480px;">
+        <video id="video" autoplay></video>
+        <canvas id="canvas"></canvas>
+    </div>
+    <!--test-->
     <script>
         // Load models
         async function loadModels() {
