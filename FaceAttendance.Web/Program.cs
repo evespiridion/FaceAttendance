@@ -1,3 +1,5 @@
+using FaceAttendance.Application.Interfaces;
+using FaceAttendance.Application.Services;
 using FaceAttendance.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,8 +14,13 @@ namespace FaceAttendance.Web
             // Add services to the container.
             builder.Services.AddControllersWithViews();
 
+            //Register DbContext
+            builder.Services.AddMemoryCache();
             builder.Services.AddDbContext<ApplicationDbContext>(option =>
-            option.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+                option.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+            // Register the Face Embeddings service
+            builder.Services.AddScoped<IFaceEmbeddingsService, FaceEmbeddingsService>();
 
             var app = builder.Build();
 

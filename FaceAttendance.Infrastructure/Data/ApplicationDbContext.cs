@@ -15,7 +15,8 @@ namespace FaceAttendance.Infrastructure.Data
 
         }
 
-        public DbSet<EmployeePhotos> EmployeePhoto { get; set; }
+        public DbSet<EmployeePhotos> EmployeePhotos { get; set; }
+        public DbSet<DailyTimeRecord> DailyTimeRecord { get; set;}
 
     }
 }

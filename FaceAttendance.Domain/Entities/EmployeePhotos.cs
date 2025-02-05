@@ -12,4 +12,13 @@ namespace FaceAttendance.Domain.Entities
         public string EmployeeName { get; set; }
         public byte[] EmployeePhoto { get; set; }
     }
+
+    public class DailyTimeRecord
+    {
+        public int Id { get; set; }
+        public string EmployeeName { get; set; }
+        public DateTime DateToday { get; set; }
+        public TimeSpan TimeIn { get; set; }
+        public TimeSpan? TimeOut { get; set; }
+    }
 }

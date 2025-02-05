@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\FaceAttendance.Domain\FaceAttendance.Domain.csproj" />
+  </ItemGroup>
+
 </Project>
