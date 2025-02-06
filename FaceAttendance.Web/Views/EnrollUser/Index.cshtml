@@ -1,0 +1,348 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Detection</title>
+    <script src="js/face-api.min.js"></script>
+    <script src="js/tsf.js"></script>
+    <style>
+        #video{
+            position: relative;
+            width: 640px;
+            height: 480px;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 5;
+            z-index: 2;
+        }
+    </style>
+</head>
+<body>
+    <div class="row justify-content-evenly">
+        <div class="col-lg-6" style="position: relative; width: 640px; height: 480px;">
+            <video id="video" autoplay></video>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div class="col-lg-3">
+            <div class="row text-center">
+                <div class="col-lg-12">
+                    <img id="captured" class="border border-3 border-info rounded-2" style="width:200px; height:220px" />
+                    <p id="name"></p>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-lg-12">
+                    <input type="text" id="employeeName" class="form-control" />
+                </div>
+            </div>
+            <div class="row mt-3">
+                <div class="col-lg-6">
+                    <input type="button" class="form-control btn btn-primary" value="Recapture" onclick="resumeScanning();" />
+                </div>
+                <div class="col-lg-6">
+                    <input type="button" class="form-control btn btn-success" value="Save" onclick="sendImageToBackend();" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <script>
+        let labeledDescriptors = [];
+
+        async function loadModels() {
+            try {
+                await faceapi.nets.ssdMobilenetv1.loadFromUri('/models');
+                await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
+                await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
+                await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
+                console.log("Models loaded successfully");
+            } catch (error) {
+                console.error("Error loading models: ", error);
+            }
+        }
+
+        async function startVideo() {
+            const video = document.getElementById('video');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
+            } catch (error) {
+                console.error("Error accessing the camera: ", error);
+                alert("Could not access the camera. Please ensure you have granted permissions.");
+            }
+        }
+
+        async function GetInfo() {
+            fetch('/FaceRecognition/GetEmployeeInfo', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            })
+                .then(response => response.json()) // Parse the JSON response
+                .then(data => {
+                    console.log("Employees:", data);
+                    // Use the data (e.g., update the DOM)
+                })
+                .catch(error => {
+                    console.error("Error:", error);
+                });
+        }
+
+        async function recordTime(employeeName) {
+            try {
+                const response = await fetch('/FaceRecognition/RecordTime', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(employeeName), // Send the employee name as a JSON string
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                toastr.success('User has been added', 'test');
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        async function loadLabeledImages() {
+            try {
+                // Fetch employee data from the server
+                const response = await fetch('/FaceRecognition/GetEmployeeInfo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const employees = await response.json();
+                const labeledDescriptors = [];
+
+                // Loop through all employees
+                for (const employee of employees) {
+                    try {
+                        // 1. Convert Base64/byte[] to an HTML image element
+                        const img = await loadImage(employee.employeePhoto);
+
+                        // 2. Detect face in the image
+                        const detection = await faceapi
+                            .detectSingleFace(img)
+                            .withFaceLandmarks()
+                            .withFaceDescriptor();
+
+                        if (!detection) {
+                            console.warn(`No face detected for ${employee.employeeName}`);
+                            continue; // Skip this employee
+                        }
+
+                        // 3. Save the descriptor
+                        labeledDescriptors.push(
+                            new faceapi.LabeledFaceDescriptors(
+                                employee.employeeName,
+                                [detection.descriptor]
+                            )
+                        );
+                    } catch (error) {
+                        console.error(`Error processing ${employee.employeeName}:`, error);
+                    }
+                }
+
+                return labeledDescriptors;
+            } catch (error) {
+                console.error("Failed to load labeled images:", error);
+                return [];
+            }
+        }
+
+        // Helper function to load images from Base64/byte[]
+        function loadImage(photoData) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.src = `data:image/jpeg;base64,${photoData}`; // Assumes photo is Base64
+                img.onload = () => resolve(img);
+                img.onerror = (err) => reject(err);
+            });
+        }
+
+        let isScanning = true;
+
+        async function recognizeFaces(labeledDescriptors) {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const capturedElement = document.getElementById('captured');
+
+            const displaySize = { width: video.videoWidth, height: video.videoHeight };
+            canvas.width = displaySize.width;
+            canvas.height = displaySize.height;
+
+            const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.38);
+
+            async function detect() {
+                if (!isScanning) return; // Stop scanning if the flag is false
+
+                try {
+                    const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+                        .withFaceLandmarks()
+                        .withFaceDescriptors();
+
+                    const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                    canvas.getContext('2d', {
+                        willReadFrequently: true
+                    }).clearRect(0, 0, canvas.width, canvas.height);
+
+                    faceapi.draw.drawDetections(canvas, resizedDetections);
+
+                    if (resizedDetections.length > 0) {
+                        resizedDetections.forEach(detection => {
+                            if (!detection.descriptor) {
+                                console.warn("No descriptor found for detection:", detection);
+                                return;
+                            }
+
+                            const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
+                            let { x, y, width, height } = detection.detection.box;
+
+                            // Add padding or scale the bounding box to include the whole head
+                            const padding = 40; // Adjust this value as needed
+                            x = Math.max(0, x - padding); // Ensure x doesn't go below 0
+                            y = Math.max(0, y - padding); // Ensure y doesn't go below 0
+                            width = Math.min(video.videoWidth - x, width + 2 * padding); // Ensure width doesn't exceed video width
+                            height = Math.min(video.videoHeight - y, height + 2 * padding); // Ensure height doesn't exceed video height
+
+                            const ctx = canvas.getContext('2d', {
+                                willReadFrequently: true
+                            });
+
+                            ctx.font = '20px Arial';
+                            ctx.fillStyle = 'red';
+                            ctx.fillText(bestMatch.label, x + 80, y + 36);
+
+                            // Capture face from video
+                            const faceCanvas = document.createElement('canvas');
+                            faceCanvas.width = width;
+                            faceCanvas.height = height;
+                            const faceCtx = faceCanvas.getContext('2d', {
+                                willReadFrequently: true
+                            });
+                            faceCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
+
+                            if (bestMatch.label == 'unknown') {
+                                //document.getElementById('name').textContent = bestMatch.label;
+                                capturedElement.src = faceCanvas.toDataURL('image/jpeg');
+
+
+                                //Pause scanning after face is detected
+                                stopScanning();
+
+                            }
+                        });
+                    } else {
+                        document.getElementById('name').textContent = "No face detected";
+                        capturedElement.src = "";
+                    }
+                } catch (error) {
+                    console.error("Error during face detection or recognition:", error);
+                }
+
+                if (isScanning) {
+                    requestAnimationFrame(detect);
+                }
+            }
+
+            requestAnimationFrame(detect);
+        }
+
+        // Function to resume scanning
+        function resumeScanning() {
+            if (!isScanning) {
+                isScanning = true;
+                recognizeFaces(labeledDescriptors);
+            }
+        }
+
+        // Function to stop scanning
+        function stopScanning() {
+            isScanning = false;
+        }
+
+
+
+        async function sendImageToBackend() {
+            const imgElement = document.getElementById('captured');
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d', {
+                willReadFrequently: true
+            });
+
+            canvas.width = imgElement.naturalWidth;
+            canvas.height = imgElement.naturalHeight;
+            context.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
+
+            // Convert canvas image to base64
+            const base64String = canvas.toDataURL('image/png').split(',')[1];
+
+            // Convert base64 to a byte array
+            const byteArray = Uint8Array.from(atob(base64String), c => c.charCodeAt(0));
+
+            // Get the employee name from the textbox
+            var name = document.getElementById("employeeName").value;
+
+            // Create an object to send
+            const requestData = {
+                employeeName: name,
+                photo: base64String // Send the image as a hexadecimal string
+            };
+
+            try {
+                const response = await fetch('/EnrollUser/AddPhoto', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData), // Send as an object
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                else { 
+                    toastr.success('The User: ' +name+ ' has been added', 'Success');
+                }
+            } catch (error) {
+
+            }
+        }
+
+
+
+
+
+
+
+        (async () => {
+            await loadModels();
+            labeledDescriptors = await loadLabeledImages(); // Assign to the global variable
+            await startVideo();
+            recognizeFaces(labeledDescriptors);
+        })();
+    </script>
+</body>
+</html>
