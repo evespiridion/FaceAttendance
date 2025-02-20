@@ -215,7 +215,8 @@
                             // Display the captured face in the 'captured' element
                             capturedElement.src = faceCanvas.toDataURL('image/jpeg');
 
-                            recordTime(bestMatch.label);
+                            //recordTime(bestMatch.label);
+                            setTimeout(() => {  recordTime(bestMatch.label); }, 2000);
 
 
                         }

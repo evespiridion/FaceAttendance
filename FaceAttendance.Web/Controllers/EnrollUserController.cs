@@ -38,10 +38,10 @@ namespace FaceAttendance.Web.Controllers
             // Convert base64 to byte array
             byte[] imageBytes = Convert.FromBase64String(data.Photo);
 
-
+            /*
             var record = await _db.EmployeePhotos
                 .FirstOrDefaultAsync(r => r.EmployeeName == name);
-
+            
             if (record == null)
             {
                 record = new EmployeePhotos
@@ -55,6 +55,16 @@ namespace FaceAttendance.Web.Controllers
             {
                 return BadRequest("Employee name already exists.");
             }
+            */
+            var record = await _db.EmployeePhotos
+                .FirstOrDefaultAsync(r => r.EmployeeName == name);
+
+            record = new EmployeePhotos
+            {
+                EmployeeName = name,
+                EmployeePhoto = imageBytes
+            };
+            _db.EmployeePhotos.Add(record);
 
             await _db.SaveChangesAsync();
 
